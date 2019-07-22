@@ -1,0 +1,13 @@
+[package]
+name = "re-ll"
+version = "0.1.0"
+authors = ["cynic64 <f3bl@gmx.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+vulkano = "0.13"
+vulkano-win = "0.13"
+vulkano-shaders = "0.13"
+winit = "0.19"
