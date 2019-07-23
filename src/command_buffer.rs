@@ -10,6 +10,7 @@ use vulkano::framebuffer::FramebufferAbstract;
 use vulkano::pipeline::GraphicsPipelineAbstract;
 use vulkano::swapchain::{PresentFuture, Swapchain};
 use vulkano::sync::{FenceSignalFuture, FlushError, GpuFuture};
+use vulkano::sync;
 
 use std::sync::Arc;
 
@@ -49,17 +50,18 @@ pub fn create_command_buffer(
     command_buffer.end_render_pass().unwrap().build().unwrap()
 }
 
-pub fn submit_command_buffer_to_swapchain<W, F>(
-    device: Arc<Device>,
+type SwapchainSubmissionResult<F, W> = Result<
+    FenceSignalFuture<PresentFuture<CommandBufferExecFuture<F, AutoCommandBuffer>, W>>,
+    FlushError,
+>;
+
+pub fn submit_command_buffer_to_swapchain<F, W>(
     queue: Arc<Queue>,
     future: F,
     swapchain: Arc<Swapchain<W>>,
     image_num: usize,
     command_buffer: AutoCommandBuffer,
-) -> Result<
-    FenceSignalFuture<PresentFuture<CommandBufferExecFuture<F, AutoCommandBuffer>, W>>,
-    FlushError,
->
+) -> SwapchainSubmissionResult<F, W>
 where
     F: GpuFuture + 'static,
 {
@@ -68,7 +70,29 @@ where
         .then_signal_fence_and_flush()
 }
 
-// pub fn check_if_swapchain_outdated
+pub fn cleanup_swapchain_result<F, W>(device: Arc<Device>, result: SwapchainSubmissionResult<F, W>) -> bool
+where
+    F: GpuFuture + 'static,
+{
+    // returns whether the swapchain must be recreated or not
+    let mut must_rebuild = false;
+    let mut future: Box<GpuFuture> = match result {
+        Ok(future) => Box::new(future),
+        Err(FlushError::OutOfDate) => {
+            must_rebuild = true;
+            Box::new(sync::now(device))
+        }
+        Err(e) => {
+            println!("{:?}", e);
+            Box::new(sync::now(device))
+        }
+    };
+
+    // free resources no longer needed
+    future.cleanup_finished();
+
+    must_rebuild
+}
 
 fn submit_command_buffer_partial<F>(
     queue: Arc<Queue>,
