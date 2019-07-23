@@ -1,11 +1,12 @@
 extern crate vulkano;
-use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
+use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState, CommandBufferExecFuture};
 use vulkano::device::{Device, Queue};
 use vulkano::framebuffer::FramebufferAbstract;
 use vulkano::pipeline::GraphicsPipelineAbstract;
 use vulkano::descriptor::DescriptorSet;
 use vulkano::format::ClearValue;
 use vulkano::buffer::BufferAccess;
+use vulkano::sync::GpuFuture;
 
 use std::sync::Arc;
 
@@ -45,5 +46,19 @@ pub fn create_command_buffer(device: Arc<Device>, queue: Arc<Queue>, framebuffer
         .end_render_pass()
         .unwrap()
         .build()
+        .unwrap()
+}
+
+// pub fn submit_command_buffer_to_swapchain<W>(device: Arc<Device>, queue: Arc<Queue>, swapchain: <Swapchain<W>>, image_num: usize) -> GpuFuture {
+// }
+
+pub fn submit_command_buffer_partial<F>(queue: Arc<Queue>, future: F, command_buffer: AutoCommandBuffer) -> CommandBufferExecFuture<F, AutoCommandBuffer>
+    where F: GpuFuture + 'static,
+{
+    future
+        .then_execute(
+            queue.clone(),
+            command_buffer,
+        )
         .unwrap()
 }
