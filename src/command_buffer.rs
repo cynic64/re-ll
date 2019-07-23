@@ -6,7 +6,8 @@ use vulkano::pipeline::GraphicsPipelineAbstract;
 use vulkano::descriptor::DescriptorSet;
 use vulkano::format::ClearValue;
 use vulkano::buffer::BufferAccess;
-use vulkano::sync::GpuFuture;
+use vulkano::sync::{FenceSignalFuture, GpuFuture, FlushError};
+use vulkano::swapchain::{PresentFuture, Swapchain};
 
 use std::sync::Arc;
 
@@ -49,10 +50,19 @@ pub fn create_command_buffer(device: Arc<Device>, queue: Arc<Queue>, framebuffer
         .unwrap()
 }
 
-// pub fn submit_command_buffer_to_swapchain<W>(device: Arc<Device>, queue: Arc<Queue>, swapchain: <Swapchain<W>>, image_num: usize) -> GpuFuture {
-// }
+pub fn submit_command_buffer_to_swapchain<W, F>(device: Arc<Device>, queue: Arc<Queue>, future: F, swapchain: Arc<Swapchain<W>>, image_num: usize, command_buffer: AutoCommandBuffer) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<F, AutoCommandBuffer>, W>>, FlushError>
+    where F: GpuFuture + 'static,
+{
+    submit_command_buffer_partial(queue.clone(), future, command_buffer)
+        .then_swapchain_present(
+            queue,
+            swapchain,
+            image_num,
+        )
+        .then_signal_fence_and_flush()
+}
 
-pub fn submit_command_buffer_partial<F>(queue: Arc<Queue>, future: F, command_buffer: AutoCommandBuffer) -> CommandBufferExecFuture<F, AutoCommandBuffer>
+fn submit_command_buffer_partial<F>(queue: Arc<Queue>, future: F, command_buffer: AutoCommandBuffer) -> CommandBufferExecFuture<F, AutoCommandBuffer>
     where F: GpuFuture + 'static,
 {
     future
