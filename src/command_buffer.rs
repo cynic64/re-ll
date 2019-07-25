@@ -14,6 +14,9 @@ use vulkano::sync;
 
 use std::sync::Arc;
 
+// TODO: because this is all in the command_buffer namespace, command_buffer can be removed from all
+// function names to make em shorter
+
 #[derive(Clone)]
 pub struct ConcreteObject {
     pub pipeline: Arc<GraphicsPipelineAbstract + Send + Sync>,
@@ -102,5 +105,5 @@ fn submit_command_buffer_partial<F>(
 where
     F: GpuFuture + 'static,
 {
-    future.then_execute(queue.clone(), command_buffer).unwrap()
+    future.then_execute(queue, command_buffer).unwrap()
 }
