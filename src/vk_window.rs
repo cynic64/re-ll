@@ -195,7 +195,6 @@ fn create_framebuffers(
     images: Vec<Arc<SwapchainImage<Window>>>,
 ) -> Vec<Arc<FramebufferAbstract + Send + Sync>> {
     // this sucks.
-    dbg![dimensions];
     match render_pass.num_attachments() {
         0 => panic!("You provided an empty render pass to create_framebuffers"),
         1 => images

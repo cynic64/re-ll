@@ -9,8 +9,8 @@ use vulkano::format::ClearValue;
 use vulkano::framebuffer::FramebufferAbstract;
 use vulkano::pipeline::GraphicsPipelineAbstract;
 use vulkano::swapchain::{PresentFuture, Swapchain};
-use vulkano::sync::{FenceSignalFuture, FlushError, GpuFuture};
 use vulkano::sync;
+use vulkano::sync::{FenceSignalFuture, FlushError, GpuFuture};
 
 use std::sync::Arc;
 
@@ -73,7 +73,10 @@ where
         .then_signal_fence_and_flush()
 }
 
-pub fn cleanup_swapchain_result<F, W>(device: Arc<Device>, result: SwapchainSubmissionResult<F, W>) -> bool
+pub fn cleanup_swapchain_result<F, W>(
+    device: Arc<Device>,
+    result: SwapchainSubmissionResult<F, W>,
+) -> bool
 where
     F: GpuFuture + 'static,
 {
