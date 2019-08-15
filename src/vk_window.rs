@@ -23,9 +23,9 @@ use crate::command_buffer;
 pub struct VkWindow {
     device: Arc<Device>,
     swapchain: Arc<Swapchain<Window>>,
-    framebuffers: Vec<Arc<FramebufferAbstract + Send + Sync>>,
+    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     surface: Arc<Surface<Window>>,
-    render_pass: Arc<RenderPassAbstract + Send + Sync>,
+    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     image_num: Option<usize>,
     future: Option<SwapchainAcquireFuture<Window>>,
 }
@@ -35,7 +35,7 @@ impl VkWindow {
         device: Arc<Device>,
         queue: Arc<Queue>,
         surface: Arc<Surface<Window>>,
-        render_pass: Arc<RenderPassAbstract + Send + Sync>,
+        render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
         caps: Capabilities,
     ) -> Self {
         // create swapchain
@@ -74,11 +74,11 @@ impl VkWindow {
         }
     }
 
-    pub fn update_render_pass(&mut self, render_pass: Arc<RenderPassAbstract + Send + Sync>) {
+    pub fn update_render_pass(&mut self, render_pass: Arc<dyn RenderPassAbstract + Send + Sync>) {
         self.render_pass = render_pass;
     }
 
-    pub fn next_framebuffer(&mut self) -> Arc<FramebufferAbstract + Send + Sync> {
+    pub fn next_framebuffer(&mut self) -> Arc<dyn FramebufferAbstract + Send + Sync> {
         // TODO: this does more than the name suggests, which is not so great
         let mut idx_and_future = None;
         while idx_and_future.is_none() {
@@ -191,16 +191,16 @@ fn create_swapchain_and_images_from_scratch(
 fn create_framebuffers(
     device: Arc<Device>,
     dimensions: [u32; 2],
-    render_pass: Arc<RenderPassAbstract + Send + Sync>,
+    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     images: Vec<Arc<SwapchainImage<Window>>>,
-) -> Vec<Arc<FramebufferAbstract + Send + Sync>> {
-    // this sucks.
+) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+    // FIXME: this sucks.
     match render_pass.num_attachments() {
         0 => panic!("You provided an empty render pass to create_framebuffers"),
         1 => images
             .iter()
             .map(|image| {
-                let fba: Arc<FramebufferAbstract + Send + Sync> = Arc::new(
+                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
                     Framebuffer::start(render_pass.clone())
                         .add(image.clone())
                         .unwrap()
@@ -219,7 +219,7 @@ fn create_framebuffers(
                     dimensions,
                     render_pass.attachment_desc(1).unwrap(),
                 );
-                let fba: Arc<FramebufferAbstract + Send + Sync> = Arc::new(
+                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
                     Framebuffer::start(render_pass.clone())
                         .add(image.clone())
                         .unwrap()
@@ -245,7 +245,7 @@ fn create_framebuffers(
                     dimensions,
                     render_pass.attachment_desc(2).unwrap(),
                 );
-                let fba: Arc<FramebufferAbstract + Send + Sync> = Arc::new(
+                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
                     Framebuffer::start(render_pass.clone())
                         .add(image.clone())
                         .unwrap()
@@ -278,7 +278,7 @@ fn create_framebuffers(
                     dimensions,
                     render_pass.attachment_desc(3).unwrap(),
                 );
-                let fba: Arc<FramebufferAbstract + Send + Sync> = Arc::new(
+                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
                     Framebuffer::start(render_pass.clone())
                         .add(image.clone())
                         .unwrap()

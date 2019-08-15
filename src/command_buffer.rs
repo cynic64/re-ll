@@ -19,16 +19,16 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ConcreteObject {
-    pub pipeline: Arc<GraphicsPipelineAbstract + Send + Sync>,
+    pub pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     pub dynamic_state: DynamicState,
-    pub vertex_buffer: Arc<dyn BufferAccess + Send + Sync + 'static>,
-    pub uniform_set: Arc<DescriptorSet + Send + Sync>,
+    pub vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
+    pub uniform_set: Arc<dyn DescriptorSet + Send + Sync>,
 }
 
 pub fn create_command_buffer(
     device: Arc<Device>,
     queue: Arc<Queue>,
-    framebuffer: Arc<FramebufferAbstract + Send + Sync>,
+    framebuffer: Arc<dyn FramebufferAbstract + Send + Sync>,
     clear_values: &[ClearValue],
     objects: &[ConcreteObject],
 ) -> AutoCommandBuffer {
@@ -82,7 +82,7 @@ where
 {
     // returns whether the swapchain must be recreated or not
     let mut must_rebuild = false;
-    let mut future: Box<GpuFuture> = match result {
+    let mut future: Box<dyn GpuFuture> = match result {
         Ok(future) => Box::new(future),
         Err(FlushError::OutOfDate) => {
             must_rebuild = true;
