@@ -1,4 +1,3 @@
-extern crate vulkano;
 use vulkano::buffer::BufferAccess;
 use vulkano::command_buffer::{
     AutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferExecFuture, DynamicState,

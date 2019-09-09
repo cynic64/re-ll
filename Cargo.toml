@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vulkano = { path = "../vulkano-master/vulkano" }
-vulkano-win = { path = "../vulkano-master/vulkano-win" }
-vulkano-shaders = { path = "../vulkano-master/vulkano-shaders" }
+vulkano = "0.14"
+vulkano-win = "0.14"
+vulkano-shaders = "0.14"
 winit = "0.19"
