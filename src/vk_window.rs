@@ -2,28 +2,24 @@
 // and maybe move queue into VkWindow, even if the only method that requires it is submit_command_buffer
 // i think so bc while constantly changing queues can be useful, never when submitting to a swapchain
 
-use vulkano::command_buffer::AutoCommandBuffer;
 use vulkano::device::{Device, Queue};
-use vulkano::framebuffer::{
-    AttachmentDescription, Framebuffer, FramebufferAbstract, RenderPassAbstract, RenderPassDesc,
-};
-use vulkano::image::attachment::AttachmentImage;
+use vulkano::framebuffer::RenderPassAbstract;
 use vulkano::image::SwapchainImage;
 use vulkano::swapchain::{
     AcquireError, Capabilities, PresentMode, Surface, SurfaceTransform, Swapchain,
     SwapchainAcquireFuture, SwapchainCreationError,
 };
+use vulkano::sync;
+use vulkano::sync::{FlushError, GpuFuture};
 
 use winit::Window;
 
 use std::sync::Arc;
 
-use crate::command_buffer;
-
 pub struct VkWindow {
     device: Arc<Device>,
     swapchain: Arc<Swapchain<Window>>,
-    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    images: Vec<Arc<SwapchainImage<Window>>>,
     surface: Arc<Surface<Window>>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     image_num: Option<usize>,
@@ -46,27 +42,10 @@ impl VkWindow {
             caps,
         );
 
-        // create framebuffers
-        // currently makes some assumptions about the format of each image
-        // there must be a way to do this based on the render pass
-        // check RenderPassDesc
-        let dims: (u32, u32) = surface
-            .window()
-            .get_inner_size()
-            .unwrap()
-            .to_physical(surface.window().get_hidpi_factor())
-            .into();
-        let framebuffers = create_framebuffers(
-            device.clone(),
-            [dims.0, dims.1],
-            render_pass.clone(),
-            images,
-        );
-
         Self {
             device,
             swapchain,
-            framebuffers,
+            images,
             surface,
             render_pass,
             image_num: None,
@@ -74,11 +53,11 @@ impl VkWindow {
         }
     }
 
-    pub fn update_render_pass(&mut self, render_pass: Arc<dyn RenderPassAbstract + Send + Sync>) {
-        self.render_pass = render_pass;
+    pub fn set_render_pass(&mut self, new_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>) {
+        self.render_pass = new_render_pass;
     }
 
-    pub fn next_framebuffer(&mut self) -> Arc<dyn FramebufferAbstract + Send + Sync> {
+    pub fn next_image(&mut self) -> Arc<SwapchainImage<Window>> {
         // TODO: this does more than the name suggests, which is not so great
         let mut idx_and_future = None;
         while idx_and_future.is_none() {
@@ -100,7 +79,7 @@ impl VkWindow {
         self.image_num = Some(idx_and_future.0);
         self.future = Some(idx_and_future.1);
 
-        self.framebuffers[self.image_num.unwrap()].clone()
+        self.images[idx_and_future.0].clone()
     }
 
     pub fn get_dimensions(&self) -> [u32; 2] {
@@ -115,7 +94,6 @@ impl VkWindow {
     }
 
     pub fn rebuild(&mut self) {
-        // rebuilds swapchain and framebuffers
         let dimensions = self.get_dimensions();
         let result = match self.swapchain.recreate_with_dimension(dimensions) {
             Ok(r) => r,
@@ -126,29 +104,35 @@ impl VkWindow {
         };
 
         self.swapchain = result.0;
-        let images = result.1;
-        self.framebuffers = create_framebuffers(
-            self.device.clone(),
-            dimensions,
-            self.render_pass.clone(),
-            images,
-        );
+        self.images = result.1;
     }
 
-    pub fn submit_command_buffer(&mut self, queue: Arc<Queue>, command_buffer: AutoCommandBuffer) {
-        if self.image_num.is_none() || self.future.is_none() {
-            panic!("Image_num or future was none when trying to submit command buffer to swapchain. next_framebuffer was probably not called before.");
+    pub fn get_future(&mut self) -> SwapchainAcquireFuture<Window> {
+        self.future.take().unwrap()
+    }
+
+    pub fn present_image<F>(&mut self, queue: Arc<Queue>, future: F)
+    where
+        F: GpuFuture + 'static,
+    {
+        if self.image_num.is_none() {
+            panic!("Image_num was none when trying to submit command buffer to swapchain. next_image was probably not called before.");
         }
 
-        let result = command_buffer::submit_command_buffer_to_swapchain(
-            queue.clone(),
-            self.future.take().unwrap(),
-            self.swapchain.clone(),
-            self.image_num.take().unwrap(),
-            command_buffer,
-        );
+        let result = future
+            .then_swapchain_present(queue, self.swapchain.clone(), self.image_num.unwrap())
+            .then_signal_fence_and_flush();
 
-        command_buffer::cleanup_swapchain_result(self.device.clone(), result);
+        let mut new_fut: Box<dyn GpuFuture> = match result {
+            Ok(new_fut) => Box::new(new_fut),
+            Err(FlushError::OutOfDate) => Box::new(sync::now(self.device.clone())),
+            Err(e) => {
+                println!("{:?}", e);
+                Box::new(sync::now(self.device.clone()))
+            }
+        };
+
+        new_fut.cleanup_finished();
     }
 
     pub fn get_surface(&self) -> Arc<Surface<Window>> {
@@ -186,126 +170,6 @@ fn create_swapchain_and_images_from_scratch(
         Err(SwapchainCreationError::UnsupportedDimensions) => panic!("SwapchainCreationError::UnsupportedDimensions when creating initial swapchain. Should never happen."),
         Err(err) => panic!("{:?}", err),
     }
-}
-
-fn create_framebuffers(
-    device: Arc<Device>,
-    dimensions: [u32; 2],
-    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    images: Vec<Arc<SwapchainImage<Window>>>,
-) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
-    // FIXME: this sucks.
-    match render_pass.num_attachments() {
-        0 => panic!("You provided an empty render pass to create_framebuffers"),
-        1 => images
-            .iter()
-            .map(|image| {
-                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
-                    Framebuffer::start(render_pass.clone())
-                        .add(image.clone())
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
-
-                fba
-            })
-            .collect(),
-        2 => images
-            .iter()
-            .map(|image| {
-                let attachment1 = create_image_for_desc(
-                    device.clone(),
-                    dimensions,
-                    render_pass.attachment_desc(1).unwrap(),
-                );
-                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
-                    Framebuffer::start(render_pass.clone())
-                        .add(image.clone())
-                        .unwrap()
-                        .add(attachment1)
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
-
-                fba
-            })
-            .collect(),
-        3 => images
-            .iter()
-            .map(|image| {
-                let attachment1 = create_image_for_desc(
-                    device.clone(),
-                    dimensions,
-                    render_pass.attachment_desc(1).unwrap(),
-                );
-                let attachment2 = create_image_for_desc(
-                    device.clone(),
-                    dimensions,
-                    render_pass.attachment_desc(2).unwrap(),
-                );
-                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
-                    Framebuffer::start(render_pass.clone())
-                        .add(image.clone())
-                        .unwrap()
-                        .add(attachment1)
-                        .unwrap()
-                        .add(attachment2)
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
-
-                fba
-            })
-            .collect(),
-        4 => images
-            .iter()
-            .map(|image| {
-                let attachment1 = create_image_for_desc(
-                    device.clone(),
-                    dimensions,
-                    render_pass.attachment_desc(1).unwrap(),
-                );
-                let attachment2 = create_image_for_desc(
-                    device.clone(),
-                    dimensions,
-                    render_pass.attachment_desc(2).unwrap(),
-                );
-                let attachment3 = create_image_for_desc(
-                    device.clone(),
-                    dimensions,
-                    render_pass.attachment_desc(3).unwrap(),
-                );
-                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
-                    Framebuffer::start(render_pass.clone())
-                        .add(image.clone())
-                        .unwrap()
-                        .add(attachment1)
-                        .unwrap()
-                        .add(attachment2)
-                        .unwrap()
-                        .add(attachment3)
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
-
-                fba
-            })
-            .collect(),
-        _ => panic!("More than 1 attachment image is not supported"),
-    }
-}
-
-fn create_image_for_desc(
-    device: Arc<Device>,
-    dimensions: [u32; 2],
-    desc: AttachmentDescription,
-) -> Arc<AttachmentImage> {
-    AttachmentImage::transient_multisampled(device.clone(), dimensions, desc.samples, desc.format)
-        .unwrap()
 }
 
 type SwapchainAndImages = (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>);
