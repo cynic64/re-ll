@@ -26,6 +26,8 @@ pub struct VkWindow {
     future: Option<SwapchainAcquireFuture<Window>>,
 }
 
+// TODO: make the fps counter only start after the first frame is drawn
+
 impl VkWindow {
     pub fn new(
         device: Arc<Device>,
