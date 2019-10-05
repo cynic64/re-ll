@@ -1,7 +1,3 @@
-// TODO: check whether the names (get_framebuffer, etc.) conform to the rust API guidelines
-// and maybe move queue into VkWindow, even if the only method that requires it is submit_command_buffer
-// i think so bc while constantly changing queues can be useful, never when submitting to a swapchain
-
 use vulkano::device::{Device, Queue};
 use vulkano::framebuffer::RenderPassAbstract;
 use vulkano::image::SwapchainImage;
@@ -16,6 +12,7 @@ use winit::Window;
 
 use std::sync::Arc;
 
+// TODO: store queue instead of device
 pub struct VkWindow {
     device: Arc<Device>,
     swapchain: Arc<Swapchain<Window>>,
@@ -25,8 +22,6 @@ pub struct VkWindow {
     image_num: Option<usize>,
     future: Option<SwapchainAcquireFuture<Window>>,
 }
-
-// TODO: make the fps counter only start after the first frame is drawn
 
 impl VkWindow {
     pub fn new(
