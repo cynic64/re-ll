@@ -20,7 +20,9 @@ pub struct VkWindow {
     surface: Arc<Surface<Window>>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     image_num: Option<usize>,
-    future: Option<SwapchainAcquireFuture<Window>>,
+    future: Option<Box<dyn GpuFuture>>,
+    previous_frame_end: Option<Box<dyn GpuFuture>>,
+    dimensions: [u32; 2],
 }
 
 impl VkWindow {
@@ -40,13 +42,18 @@ impl VkWindow {
         );
 
         Self {
-            device,
+            device: device.clone(),
             swapchain,
             images,
             surface,
             render_pass,
             image_num: None,
+            // TODO: better name
             future: None,
+            // TODO: maybe PFE and future can be joined into one, constantly
+            // updating future
+            previous_frame_end: Some(Box::new(sync::now(device.clone()))),
+            dimensions: [0, 0],
         }
     }
 
@@ -72,14 +79,14 @@ impl VkWindow {
             };
         }
 
-        let idx_and_future = idx_and_future.unwrap();
-        self.image_num = Some(idx_and_future.0);
-        self.future = Some(idx_and_future.1);
+        let (image_num, acquire_future) = idx_and_future.unwrap();
+        self.image_num = Some(image_num);
+        self.future = Some(Box::new(self.previous_frame_end.take().unwrap().join(acquire_future)));
 
-        self.images[idx_and_future.0].clone()
+        self.images[image_num].clone()
     }
 
-    pub fn get_dimensions(&self) -> [u32; 2] {
+    pub fn update_dimensions(&mut self) {
         let dims: (u32, u32) = self
             .surface
             .window()
@@ -87,15 +94,19 @@ impl VkWindow {
             .unwrap()
             .to_physical(self.surface.window().get_hidpi_factor())
             .into();
-        [dims.0, dims.1]
+        self.dimensions = [dims.0, dims.1]
+    }
+
+    pub fn get_dimensions(&self) -> [u32; 2] {
+        self.dimensions
     }
 
     pub fn rebuild(&mut self) {
-        let dimensions = self.get_dimensions();
-        let result = match self.swapchain.recreate_with_dimension(dimensions) {
+        self.update_dimensions();
+        let result = match self.swapchain.recreate_with_dimension(self.dimensions) {
             Ok(r) => r,
             Err(SwapchainCreationError::UnsupportedDimensions) => {
-                panic!("Unsupported dimensions: {:?}", dimensions);
+                panic!("Unsupported dimensions: {:?}", self.dimensions);
             }
             Err(err) => panic!("{:?}", err),
         };
@@ -104,7 +115,7 @@ impl VkWindow {
         self.images = result.1;
     }
 
-    pub fn get_future(&mut self) -> SwapchainAcquireFuture<Window> {
+    pub fn get_future(&mut self) -> Box<dyn GpuFuture> {
         self.future.take().unwrap()
     }
 
@@ -130,6 +141,8 @@ impl VkWindow {
         };
 
         new_fut.cleanup_finished();
+
+        self.previous_frame_end = Some(new_fut);
     }
 
     pub fn get_surface(&self) -> Arc<Surface<Window>> {
