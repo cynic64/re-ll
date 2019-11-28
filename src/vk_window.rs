@@ -3,7 +3,7 @@ use vulkano::framebuffer::RenderPassAbstract;
 use vulkano::image::SwapchainImage;
 use vulkano::swapchain::{
     AcquireError, Capabilities, PresentMode, Surface, SurfaceTransform, Swapchain,
-    SwapchainAcquireFuture, SwapchainCreationError,
+    SwapchainCreationError,
 };
 use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture};
@@ -81,7 +81,9 @@ impl VkWindow {
 
         let (image_num, acquire_future) = idx_and_future.unwrap();
         self.image_num = Some(image_num);
-        self.future = Some(Box::new(self.previous_frame_end.take().unwrap().join(acquire_future)));
+        self.future = Some(Box::new(
+            self.previous_frame_end.take().unwrap().join(acquire_future),
+        ));
 
         self.images[image_num].clone()
     }
